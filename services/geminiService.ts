@@ -34,7 +34,12 @@ export const generateStoryboard = async (script: string): Promise<Scene[]> => {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: GEMINI_MODEL_REASONING,
-      contents: script,
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: script }]
+        }
+      ],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION_STORYBOARD,
         responseMimeType: "application/json",

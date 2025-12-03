@@ -24,7 +24,7 @@ try {
 
 export const APP_PASSWORD = "nihongboluoup!";
 
-export const GEMINI_MODEL_REASONING = "gemini-3-pro-preview";
+export const GEMINI_MODEL_REASONING = "gemini-2.5-flash";
 // Using flash-image to avoid 403 errors on standard keys
 export const GEMINI_MODEL_IMAGE = "gemini-2.5-flash-image"; 
 export const VEO_MODEL = "veo-3.1-fast-generate-preview";

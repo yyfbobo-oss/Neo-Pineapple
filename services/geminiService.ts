@@ -27,19 +27,17 @@ const getAiClient = () => {
 };
 
 /**
- * Generates a storyboard from a raw script using Gemini 3 Pro.
+ * Generates a storyboard from a raw script using Gemini 2.5 Flash.
  */
 export const generateStoryboard = async (script: string): Promise<Scene[]> => {
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: GEMINI_MODEL_REASONING,
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: script }]
-        }
-      ],
+      // FIX: Use simple object structure for contents to prevent XHR/RPC errors on proxy
+      contents: {
+        parts: [{ text: script }]
+      },
       config: {
         systemInstruction: SYSTEM_INSTRUCTION_STORYBOARD,
         responseMimeType: "application/json",
@@ -184,34 +182,49 @@ export const generateVideoClip = async (
   } catch (error: any) {
     console.error("Video Gen Error (Attempt 1):", error);
     
-    // Check for 404 Not Found, which usually implies missing access/permissions for Veo
-    const isNotFound = error.message?.includes("404") || 
-                       error.toString().includes("Not Found") || 
-                       error.status === 404 ||
-                       (error.error && error.error.code === 404);
+    // Robust 404/Permission detection
+    // Handle: nested error objects, stringified JSON errors, and standard Error messages
+    let isNotFound = false;
+    try {
+      if (error.status === 404) isNotFound = true;
+      if (error.error && error.error.code === 404) isNotFound = true;
+      if (error.message && (error.message.includes("404") || error.message.includes("Not Found"))) isNotFound = true;
+      // Fallback: stringify entire error to catch nested messages
+      if (!isNotFound && JSON.stringify(error).includes("Requested entity was not found")) isNotFound = true;
+    } catch (e) {
+      console.warn("Error parsing exception:", e);
+    }
 
     if (isNotFound) {
-      if ((window as any).aistudio && (window as any).aistudio.openSelectKey) {
-         console.log("Triggering API Key Selection due to 404...");
-         try {
-            await (window as any).aistudio.openSelectKey();
-            
-            // CRITICAL: Re-initialize client AFTER the key selection promise resolves.
-            const newAi = getAiClient();
-            console.log("Retrying video generation with new key...");
-            return await performGeneration(newAi);
-         } catch (retryError) {
-            console.error("Video Gen Error (Retry Failed):", retryError);
-            // Fall through to fallback
-         }
-      }
+       // Manual API Key Entry Logic
+       const userKey = window.prompt("【Veo 模型权限检查】\n检测到当前 Key 无法访问视频生成模型 (404 Error)。\n\n请手动输入具有 Veo 权限的 Google Cloud API Key 以继续：");
+       
+       if (userKey && userKey.trim().length > 0) {
+           console.log("Applying user provided key...");
+           // 1. Update runtime env
+           if (typeof window !== 'undefined') {
+              const w = window as any;
+              if (!w.process) w.process = {};
+              if (!w.process.env) w.process.env = {};
+              w.process.env.API_KEY = userKey.trim();
+           }
+
+           // 2. Retry
+           try {
+              const newAi = getAiClient(); // Will pick up the new key
+              return await performGeneration(newAi);
+           } catch (retryError) {
+              console.error("Video Gen Error (Retry Failed):", retryError);
+              // Fall through to fallback
+           }
+       }
     }
     
     // --- FALLBACK LOGIC ---
-    // If we reach here, either the retry failed, or it wasn't a 404, or openSelectKey wasn't available.
+    // If we reach here, either the retry failed, or it wasn't a 404, or user cancelled input.
     // Instead of crashing the app, we return the demo video.
     
-    alert("由于 Veo 模型权限限制或网络问题，视频生成失败。\n\n系统已自动切换至【演示模式】(Demo Mode)，将为您展示示例视频以完成测试流程。");
+    alert("视频生成遇到问题，将切换至【演示模式】(Demo Mode)。\n\n原因: 权限不足或网络请求失败。");
     
     return DEMO_VIDEO_URL;
   }
